@@ -12,7 +12,7 @@ en-core-sci-sm==0.5.4
 en-core-sci-md==0.5.4
 en-core-sci-lg==0.5.4
 tqdm==4.67.1
-transformers==4.48.0
+transformers==4.50.0
 psycopg2==2.9.9
 sentence-transformers==4.0.2
 click==8.1.8
