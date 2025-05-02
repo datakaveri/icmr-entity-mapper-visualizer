@@ -1,0 +1,9 @@
+{
+      "resourceType" : "Location",
+      "id" : "",
+      "name": "name",
+      "position": {
+        "longitude": "",
+        "latitude": ""
+      }
+}

@@ -1,0 +1,16 @@
+{
+  "resourceType" : "Observation",
+  "status" : "final",
+  "subject" : {
+    "reference" : "Person/f001"
+  },
+  "code": {
+    "coding": [
+      { "code": "28647000",
+        "display": "Boiled egg",
+        "system": "http://snomed.info/sct/"
+      }
+    ]
+  },
+  "effectiveTiming": { "repeat": {"when": ["MORN"]}}
+}

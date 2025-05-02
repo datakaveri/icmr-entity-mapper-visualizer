@@ -1,0 +1,10 @@
+{
+    "resourceType" : "Encounter",
+    "id": "",
+    "type": [],
+    "subject" : {
+      "reference" : "Patient/f001"
+    },
+    "plannedStartDate": "",
+    "location": []
+  }

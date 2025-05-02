@@ -1,0 +1,13 @@
+{
+    "resourceType" : "Group",
+    "id" : "",
+    "name": "name",
+    "title": "title",
+    "status": "active",
+    "type": "person",
+    "publisher": "ICMR",
+    "membership": "enumerated",
+    "characteristic": [],
+    "quantity": "",
+    "member": []
+}

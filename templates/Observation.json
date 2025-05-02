@@ -1,0 +1,14 @@
+{
+  "resourceType" : "Observation",
+  "status" : "final",
+  "code" : {
+    "coding" : [ {
+      "code": "386661006",
+      "display": "Fever",
+      "system": "http://snomed.info/sct/"
+    }]
+  },
+  "subject" : {
+    "reference" : "Patient/f001"
+  }
+}

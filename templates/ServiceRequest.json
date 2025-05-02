@@ -1,0 +1,27 @@
+{
+  "resourceType" : "ServiceRequest",
+  "status" : "completed",
+  "intent" : "order",
+  "category" : [{
+    "coding" : [{
+      "system" : "http://snomed.info/sct",
+      "code" : "409063005",
+      "display" : "Counselling"
+    }],
+    "text" : "Interview"
+  }],
+  "code" : {
+    "concept" : {
+      "coding" : [{
+        "system" : "http://snomed.info/sct",
+        "code" : "409966000 ",
+        "display" : "Acute diarrhea (disorder) "
+      }],
+      "text" : "Study of Acute diarrhea"
+    }
+  },
+  "subject" : {
+    "display" : "xxx"
+  },
+  "occurrenceDateTime" : "xxx"
+}
