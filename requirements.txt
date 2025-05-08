@@ -134,7 +134,7 @@ scikit-learn==1.6.1
 scipy==1.13.1
 seaborn==0.13.2
 sentence-transformers==4.1.0
-setuptools==65.5.0
+setuptools==70.0.0
 shellingham==1.5.4
 six==1.17.0
 smart-open==7.1.0
