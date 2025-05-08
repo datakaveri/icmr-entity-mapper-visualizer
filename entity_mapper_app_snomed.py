@@ -8,6 +8,7 @@ import io
 import json
 import requests
 import re
+from urllib.parse import parse_qs  # Add this import
 from mesop_demo_utils_v2_mod_2 import (
     extract_entities, 
     add_adarv_dict_attrs, 
@@ -48,7 +49,7 @@ app = dash.Dash(
 app.title = "Entity-to-SNOMED Mapper"
 
 # Define API endpoint
-API_ENDPOINT = "http://localhost:8000/search"
+API_ENDPOINT = "https://entitymapper.adarv.in/search"
 
 # Try to load FHIR templates
 try:
@@ -60,50 +61,31 @@ except Exception as e:
 
 # Layout
 app.layout = dbc.Container([
+    # Add this Location component at the top of your layout
+    dcc.Location(id='url', refresh=False),
+    html.Div(id='api-data-container', style={'display': 'none'}),
+    
     html.H2("Entity-to-SNOMED Mapper", className="mt-4 mb-4"),
     
+    # Replace the current dataset information card with a processing indicator
     dbc.Card([
         dbc.CardHeader("Dataset Information"),
         dbc.CardBody([
             dbc.Row([
                 dbc.Col([
-                    # Username field
-                    dbc.Label("Username:"),
-                    dbc.Input(id="username", placeholder="Enter your username", type="text", className="mb-3"),
-                    
-                    # Dataset type dropdown
-                    dbc.Label("Dataset Type:"),
-                    dcc.Dropdown(
-                        id="dataset-type",
-                        options=[
-                            {"label": "OBI", "value": "OBI"},
-                            {"label": "Surveillance", "value": "Surveillance"},
-                            {"label": "Research", "value": "Research"}
-                        ],
-                        placeholder="Select dataset type",
-                        className="mb-3"
+                    # Processing indicator
+                    dbc.Spinner(
+                        html.Div(id="dataset-info-display", children="Initializing..."),
+                        color="primary",
+                        type="grow",
+                        spinner_style={"width": "3rem", "height": "3rem"}
                     ),
-                    
-                    # File upload component
-                    dbc.Label("Upload Dataset:"),
-                    dcc.Upload(
-                        id='upload-data',
-                        children=html.Div([
-                            'Drag and Drop or ',
-                            html.A('Select File')
-                        ]),
-                        style={
-                            'width': '100%',
-                            'height': '60px',
-                            'lineHeight': '60px',
-                            'borderWidth': '1px',
-                            'borderStyle': 'dashed',
-                            'borderRadius': '5px',
-                            'textAlign': 'center',
-                            'margin': '10px'
-                        },
-                        multiple=False
-                    ),
+                    # Keep input fields but hide them
+                    html.Div(style={"display": "none"}, children=[
+                        dbc.Input(id="username", type="hidden"),
+                        dcc.Dropdown(id="dataset-type", style={"display": "none"}),
+                        dcc.Upload(id='upload-data', children=html.Div(['Upload']), multiple=False)
+                    ]),
                     html.Div(id='upload-status')
                 ], width=12)
             ]),
@@ -156,6 +138,7 @@ app.layout = dbc.Container([
     dcc.Store(id="snomed-mappings"),
     dcc.Store(id="original-filename"),  # Add this store for the original filename
     dcc.Store(id="current-category-column-index"),  # Add this store for the current category column index
+    dcc.Store(id="resource-ids"),  # Store resource and group IDs
     
     # Modal for entity search
     dbc.Modal([
@@ -204,6 +187,225 @@ app.layout = dbc.Container([
         children=html.Div(id="fhir-processing-output")
     ),
 ], fluid=True)
+
+# Update the URL parameter processing callback to properly handle encoded JSON
+@app.callback(
+    [Output('api-data-container', 'children'),
+     Output('username', 'value'),
+     Output('dataset-type', 'value'),
+     Output('processing-status', 'children', allow_duplicate=True),
+     Output('dataset-info-display', 'children')],  # Add this output
+    [Input('url', 'search')],
+    prevent_initial_call=True
+)
+def process_url_parameters(search):
+    if not search:
+        return None, None, None, "Waiting for dataset information...", "No dataset loaded"
+    
+    try:
+        print(f"Raw URL search string: {search}")
+        
+        # Parse query parameters
+        parsed = parse_qs(search.lstrip('?'))
+        
+        # Convert to proper dictionary format
+        params = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+        
+        # Parse JSON if data was passed as a single parameter
+        if 'data' in params:
+            try:
+                # The data might be URL-encoded JSON
+                import urllib.parse
+                
+                # First try to decode if it's URL encoded
+                decoded_data = urllib.parse.unquote(params['data'])
+                print(f"Decoded data parameter: {decoded_data[:100]}...")
+                
+                # Then parse as JSON
+                params = json.loads(decoded_data)
+                print(f"Parsed JSON data: {params}")
+            except Exception as e:
+                print(f"Error decoding JSON data: {e}")
+                # Try direct JSON parsing as fallback
+                try:
+                    params = json.loads(params['data'])
+                except Exception as e2:
+                    print(f"Error parsing data as JSON: {e2}")
+        
+        # Extract relevant fields
+        username = params.get('userName', '')
+        dataset_type = params.get('typeOfDataset', '')
+        path = params.get('path', '')
+        filename = params.get('fileName', '')
+        
+        # Additional data for later access if needed
+        disease_name = params.get('diseaseName', '')
+        res_grp_id = params.get('resGrpId', '')
+        rid = params.get('rid', '')
+        
+        print(f"Extracted parameters: username={username}, dataset_type={dataset_type}, filename={filename}, path={path}")
+        
+        # Create detailed dataset info display
+        dataset_info = html.Div([
+            html.H5(f"Processing: {filename}", className="mb-2"),
+            html.Div([
+                html.Strong("Disease: "), 
+                html.Span(disease_name)
+            ], className="mb-1"),
+            html.Div([
+                html.Strong("Type: "), 
+                html.Span(dataset_type)
+            ], className="mb-1"),
+            html.Div([
+                html.Strong("Resource ID: "), 
+                html.Span(rid)
+            ], className="mb-1 text-muted"),
+            html.Div([
+                html.Strong("Resource Group ID: "), 
+                html.Span(res_grp_id)
+            ], className="mb-1 text-muted")
+        ])
+        
+        # Store the complete data for use in other callbacks
+        return json.dumps(params), username, dataset_type, f"Processing dataset: {filename}", dataset_info
+    
+    except Exception as e:
+        print(f"Error processing URL parameters: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None, f"Error processing parameters: {str(e)}", "Error loading dataset information"
+    
+# Update the file loading callback to properly handle Windows file paths
+@app.callback(
+    [Output("stored-data", "data", allow_duplicate=True),
+     Output("upload-status", "children", allow_duplicate=True),
+     Output("processing-status", "children", allow_duplicate=True),
+     Output("original-filename", "data", allow_duplicate=True),
+     Output("resource-ids", "data")],  # Add this output
+    [Input("api-data-container", "children")],
+    prevent_initial_call=True
+)
+def load_file_from_parameters(api_data_json):
+    if not api_data_json:
+        raise PreventUpdate
+    
+    try:
+        # Parse the API data
+        api_data = json.loads(api_data_json)
+        
+        # Extract file information
+        path = api_data.get('path', '')
+        filename = api_data.get('fileName', '')
+        
+        # Clean up the filename by removing any leading backslash
+        if filename.startswith('\\'):
+            filename = filename[1:]
+        
+        # Extract resource IDs
+        res_grp_id = api_data.get('resGrpId', '')
+        rid = api_data.get('rid', '')
+        
+        # Store resource IDs in a structure for later use
+        resource_ids = {
+            "resGrpId": res_grp_id,
+            "rid": rid,
+            "userName": api_data.get('userName', ''),
+            "typeOfDataset": api_data.get('typeOfDataset', ''),
+            "diseaseName": api_data.get('diseaseName', '')
+        }
+        
+        if not path or not filename:
+            return None, "Missing file information", "Error: Missing file information", None, json.dumps(resource_ids)
+        
+        # Fix Windows file path formatting
+        # Replace any double backslashes with single ones
+        path = path.replace('\\\\', '\\')
+        
+        # Check if the path ends with a backslash or forward slash
+        if not path.endswith('\\') and not path.endswith('/'):
+            path += '\\'  # Add a trailing backslash for Windows paths
+        
+        # Construct the full file path
+        full_path = os.path.join(path, filename)
+        
+        print(f"Attempting to read file: {full_path}")
+        
+        try:
+            # Check if file exists
+            if not os.path.exists(full_path):
+                print(f"File not found: {full_path}")
+                # Try alternative path format (with forward slashes)
+                alt_path = path.replace('\\', '/') + filename
+                print(f"Trying alternative path: {alt_path}")
+                if os.path.exists(alt_path):
+                    full_path = alt_path
+                else:
+                    return None, f"File not found: {full_path}", f"Error: File not found", None, json.dumps(resource_ids)
+            
+            # Read the file
+            if filename.lower().endswith('.csv'):
+                df = pd.read_csv(full_path)
+            elif filename.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(full_path)
+            else:
+                return None, "Unsupported file type", "Error: Unsupported file type", None, json.dumps(resource_ids)
+            
+            # Extract base filename without extension
+            base_filename = os.path.splitext(filename)[0]
+            
+            print(f"Successfully loaded file with {len(df)} rows and {len(df.columns)} columns")
+            
+            return df.to_json(orient='split'), f"File loaded: {filename}", "Processing data...", base_filename, json.dumps(resource_ids)
+            
+        except Exception as e:
+            print(f"Error reading file: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, f"Error reading file: {str(e)}", f"Error: {str(e)}", None, json.dumps(resource_ids)
+        
+    except Exception as e:
+        print(f"Error processing API data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, f"Error processing API data: {str(e)}", f"Error: {str(e)}", None, "{}"
+    
+# Update your existing process_upload callback with allow_duplicate attribute
+@app.callback(
+    [Output("stored-data", "data", allow_duplicate=True),
+     Output("upload-status", "children", allow_duplicate=True),
+     Output("processing-status", "children", allow_duplicate=True),
+     Output("original-filename", "data", allow_duplicate=True)],  
+    Input("upload-data", "contents"),
+    State("upload-data", "filename"),
+    prevent_initial_call=True
+)
+def process_upload(contents, filename):
+    if contents is None:
+        return None, "", "No file uploaded", None
+    
+    try:
+        # Decode the uploaded content
+        content_type, content_string = contents.split(',')
+        decoded = base64.b64decode(content_string)
+        
+        # Process the file based on its type
+        try:
+            if 'csv' in filename.lower():
+                df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
+            elif 'xls' in filename.lower():
+                df = pd.read_excel(io.BytesIO(decoded))
+            else:
+                return None, html.Div(['Unsupported file type']), "Error: Unsupported file type", None
+        except Exception as e:
+            return None, html.Div(['Error processing this file: ' + str(e)]), f"Error: {str(e)}", None
+        
+        # Extract the base filename without extension
+        base_filename = os.path.splitext(filename)[0]
+        
+        return df.to_json(orient='split'), html.Div(['File uploaded successfully: ', filename]), "Processing data...", base_filename
+    
+    except Exception as e:
+        return None, html.Div(['Error: ', str(e)]), f"Error: {str(e)}", None
 
 # Utility function to split entities from comma-separated text
 def split_entities(entity_text):
@@ -309,43 +511,6 @@ def save_category(n_clicks, row_idx, category_value, table_data, mappings_json):
         updated_mappings = mappings_json
     
     return False, updated_data, updated_mappings
-
-# Update the process_upload callback to also store the original filename
-@app.callback(
-    [Output("stored-data", "data"),
-     Output("upload-status", "children"),
-     Output("processing-status", "children"),
-     Output("original-filename", "data")],  # Add this output
-    Input("upload-data", "contents"),
-    State("upload-data", "filename")
-)
-def process_upload(contents, filename):
-    if contents is None:
-        return None, "", "No file uploaded", None
-    
-    try:
-        # Decode the uploaded content
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-        
-        # Process the file based on its type
-        try:
-            if 'csv' in filename.lower():
-                df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
-            elif 'xls' in filename.lower():
-                df = pd.read_excel(io.BytesIO(decoded))
-            else:
-                return None, html.Div(['Unsupported file type']), "Error: Unsupported file type", None
-        except Exception as e:
-            return None, html.Div(['Error processing this file: ' + str(e)]), f"Error: {str(e)}", None
-        
-        # Extract the base filename without extension
-        base_filename = os.path.splitext(filename)[0]
-        
-        return df.to_json(orient='split'), html.Div(['File uploaded successfully: ', filename]), "Processing data...", base_filename
-    
-    except Exception as e:
-        return None, html.Div(['Error: ', str(e)]), f"Error: {str(e)}", None
 
 # Callback to process data and extract entities after upload
 @app.callback(
@@ -1273,22 +1438,22 @@ def handle_match_selection(n_clicks, button_ids, mappings_json, table_data, rena
 def close_modal(n_clicks):
     return False
 
-# Update the export mappings callback to use username and dataset type in the filename
+# Update the export mappings callback to use resource IDs in filename
 @app.callback(
     Output("download-mappings", "data"),
     Input("export-button", "n_clicks"),
     [State("snomed-mappings", "data"),
-     State("username", "value"),
-     State("dataset-type", "value"),
+     State("resource-ids", "data"),
      State("original-filename", "data")],
     prevent_initial_call=True
 )
-def export_mappings(n_clicks, mappings_json, username, dataset_type, original_filename):
-    if not mappings_json:
+def export_mappings(n_clicks, mappings_json, resource_ids_json, original_filename):
+    if not mappings_json or not resource_ids_json:
         return None
     
     try:
         mappings = json.loads(mappings_json)
+        resource_ids = json.loads(resource_ids_json)
         
         # Convert to DataFrame for export
         rows = []
@@ -1305,18 +1470,21 @@ def export_mappings(n_clicks, mappings_json, username, dataset_type, original_fi
                     "Category": mapping.get("category", "")
                 })
         
-        # Create the filename with username and dataset type
-        username = username or "user"
-        dataset_type = dataset_type or "data"
-        original_filename = original_filename or "file"
+        # Extract info from resource_ids
+        res_grp_id = resource_ids.get('resGrpId', 'unknown_group')
+        rid = resource_ids.get('rid', 'unknown_resource')
+        username = resource_ids.get('userName', 'unknown_user')
+        dataset_type = resource_ids.get('typeOfDataset', 'unknown_type')
         
         # Clean the filename components
-        username = re.sub(r'[^a-zA-Z0-9]', '_', username)
+        res_grp_id = re.sub(r'[^a-zA-Z0-9]', '_', res_grp_id)
+        username = re.sub(r'[^a-zA-Z0-9@.]', '_', username)
         dataset_type = re.sub(r'[^a-zA-Z0-9]', '_', dataset_type)
+        original_filename = original_filename or "file"
         original_filename = re.sub(r'[^a-zA-Z0-9]', '_', original_filename)
         
-        # Generate the custom filename
-        custom_filename = f"{username}_{dataset_type}_{original_filename}_snomed_mappings.csv"
+        # Generate the custom filename with resource group ID
+        custom_filename = f"{res_grp_id}_{username}_{dataset_type}_{original_filename}_snomed_mappings.csv"
         
         df = pd.DataFrame(rows)
         return dcc.send_data_frame(df.to_csv, custom_filename, index=False)
@@ -1365,13 +1533,14 @@ def update_entity_search_tab(entities_json):
         ])
     ])
 
-# Add this callback to populate the FHIR processing tab content
+# Update in the FHIR processing tab callback
 @app.callback(
     Output("fhir-processing-content", "children"),
     [Input("stored-data", "data"),
-     Input("snomed-mappings", "data")]
+     Input("snomed-mappings", "data"),
+     Input("resource-ids", "data")]  # Add resource-ids as input
 )
-def update_fhir_processing_tab(json_data, mappings_json):
+def update_fhir_processing_tab(json_data, mappings_json, resource_ids_json):
     if not json_data or not mappings_json:
         return html.Div([
             html.P("Upload a dataset and create SNOMED mappings first."),
@@ -1384,30 +1553,69 @@ def update_fhir_processing_tab(json_data, mappings_json):
             return html.Div([
                 html.P("No mappings available. Please create mappings in the Entity Search tab first."),
             ])
-            
+        
+        # Load resource IDs if available
+        dataset_name_default = ""
+        resource_id_display = ""
+        
+        if resource_ids_json:
+            try:
+                resource_ids = json.loads(resource_ids_json)
+                rid = resource_ids.get('rid', '')
+                res_grp_id = resource_ids.get('resGrpId', '')
+                
+                # Use resource ID directly for default dataset name (without dataset_ prefix)
+                if rid:
+                    dataset_name_default = rid
+                    
+                # Display resource IDs
+                if rid or res_grp_id:
+                    resource_id_display = html.Div([
+                        html.H6("Resource Information:"),
+                        html.Div([
+                            html.Strong("Resource ID: "), 
+                            html.Span(rid)
+                        ]) if rid else None,
+                        html.Div([
+                            html.Strong("Resource Group ID: "), 
+                            html.Span(res_grp_id)
+                        ]) if res_grp_id else None
+                    ], className="mb-3 p-2 border rounded bg-light")
+            except:
+                pass
+                        
         return html.Div([
             html.H5("Generate FHIR Resources"),
             html.P("Create FHIR resources from your dataset using the SNOMED mappings you've defined."),
+            
+            # Show resource IDs if available
+            resource_id_display,
+            
             html.Hr(),
             
             dbc.Form([
-                # Replace FormGroup with simple div + label + input pattern
                 html.Div([
                     dbc.Label("Dataset Name (for Group resource):", html_for="dataset-name-input"),
-                    dbc.Input(id="dataset-name-input", type="text", placeholder="Enter a name for this dataset"),
+                    dbc.Input(id="dataset-name-input", type="text", 
+                             value=dataset_name_default,
+                             placeholder="Enter a name for this dataset"),
                 ], className="mb-3"),
                 
                 html.Div([
                     dbc.Label("FHIR Server URL:", html_for="fhir-server-url"),
-                    dbc.Input(id="fhir-server-url", type="text", value="http://65.0.127.208:30007/fhir", placeholder="Enter FHIR server URL"),
+                    dbc.Input(id="fhir-server-url", type="text", 
+                             value="http://65.0.127.208:30007/fhir", 
+                             placeholder="Enter FHIR server URL"),
                 ], className="mb-3"),
                 
                 html.Div([
                     dbc.Checkbox(id="enable-fhir-upload", className="me-2"),
-                    dbc.Label("Enable FHIR server upload (otherwise just generate bundle)", html_for="enable-fhir-upload"),
+                    dbc.Label("Enable FHIR server upload (otherwise just generate bundle)", 
+                             html_for="enable-fhir-upload"),
                 ], className="mb-3"),
                 
-                dbc.Button("Generate FHIR Resources", id="generate-fhir-button", color="success", className="mt-3"),
+                dbc.Button("Generate FHIR Resources", id="generate-fhir-button", 
+                          color="success", className="mt-3"),
             ]),
             
             html.Div(id="fhir-process-status", className="mt-3"),
@@ -1418,7 +1626,6 @@ def update_fhir_processing_tab(json_data, mappings_json):
             html.P(f"Error preparing FHIR processing tab: {str(e)}"),
         ])
 
-# Callback to process the data and generate FHIR resources
 @app.callback(
     [Output("fhir-process-status", "children"),
      Output("fhir-download-section", "children"),
@@ -1426,11 +1633,12 @@ def update_fhir_processing_tab(json_data, mappings_json):
     [Input("generate-fhir-button", "n_clicks")],
     [State("stored-data", "data"),
      State("snomed-mappings", "data"),
+     State("resource-ids", "data"),
      State("dataset-name-input", "value"),
      State("enable-fhir-upload", "checked"),
      State("fhir-server-url", "value")]
 )
-def generate_fhir_resources(n_clicks, json_data, mappings_json, dataset_name, enable_upload, server_url):
+def generate_fhir_resources(n_clicks, json_data, mappings_json, resource_ids_json, dataset_name, enable_upload, server_url):
     # Prevent the callback from running on page load
     if not n_clicks:
         raise PreventUpdate
@@ -1438,10 +1646,32 @@ def generate_fhir_resources(n_clicks, json_data, mappings_json, dataset_name, en
     if not json_data or not mappings_json:
         return html.P("No data or mappings available."), None, None
     
-    if not dataset_name:
-        dataset_name = f"dataset_{int(time.time())}"
-    
     try:
+        # Load resource IDs if available
+        if resource_ids_json:
+            resource_ids = json.loads(resource_ids_json)
+            rid = resource_ids.get('rid', '')
+            res_grp_id = resource_ids.get('resGrpId', '')
+            disease_name = resource_ids.get('diseaseName', '')
+        else:
+            rid = ''
+            res_grp_id = ''
+            disease_name = ''
+        
+        # Use resource ID directly without dataset_ prefix
+        if not dataset_name:
+            if rid:
+                dataset_name = rid
+            else:
+                dataset_name = f"{int(time.time())}"
+        
+        # For FHIR, include the resource ID in metadata if available
+        metadata = {
+            "resourceId": rid,
+            "resourceGroupId": res_grp_id,
+            "diseaseName": disease_name
+        }
+                
         # Load the original dataframe
         df = pd.read_json(json_data, orient='split')
         mappings = json.loads(mappings_json)
@@ -1490,8 +1720,8 @@ def generate_fhir_resources(n_clicks, json_data, mappings_json, dataset_name, en
                 # If there's an error, keep the default attributes already set
         
         # Create valueSet attributes based on data types
-        df = create_valueset(df)
-        
+        df = create_valueset(df)        
+
         # For debugging: verify that all columns have the necessary attributes
         for col_name in df.columns:
             print(f"Column {col_name} attributes:")
@@ -1561,24 +1791,40 @@ def generate_fhir_resources(n_clicks, json_data, mappings_json, dataset_name, en
             ], className="text-danger")
         ], None, None
 
-# Callbacks for downloading the bundles
+# Update the bundle download callback to include resource IDs in filenames
 @app.callback(
     Output("download-bundle-data", "data"),
     [Input("download-full-bundle", "n_clicks"),
      Input("download-sample-bundle", "n_clicks")],
     [State("full-bundle-storage", "children"),
      State("sample-bundle-storage", "children"),
-     State("dataset-name-input", "value")]
+     State("dataset-name-input", "value"),
+     State("resource-ids", "data")]  # Add resource-ids as state
 )
-def download_bundle(full_clicks, sample_clicks, full_bundle_json, sample_bundle_json, dataset_name):
+def download_bundle(full_clicks, sample_clicks, full_bundle_json, sample_bundle_json, dataset_name, resource_ids_json):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
     
     button_id = ctx.triggered[0]["prop_id"].split(".")[0] 
     
+    # Get resource ID for filename
+    rid = ""
+    if resource_ids_json:
+        try:
+            resource_ids = json.loads(resource_ids_json)
+            rid = resource_ids.get('rid', '')
+        except:
+            pass
+    
+    # Create filename with resource ID if available
     if not dataset_name:
-        dataset_name = f"dataset_{int(time.time())}"
+        if rid:
+            dataset_name = f"dataset_{rid}"
+        else:
+            dataset_name = f"dataset_{int(time.time())}"
+    elif rid and rid not in dataset_name:
+        dataset_name = f"{dataset_name}_{rid}"
     
     if button_id == "download-full-bundle":
         return dict(
@@ -1596,4 +1842,4 @@ def download_bundle(full_clicks, sample_clicks, full_bundle_json, sample_bundle_
     raise PreventUpdate
 
 if __name__ == "__main__":
-    app.run_server(debug=True, port=8050)
+    app.run(host='0.0.0.0', debug=True, port=8050)

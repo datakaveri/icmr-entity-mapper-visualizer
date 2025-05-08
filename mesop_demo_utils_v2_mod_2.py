@@ -958,6 +958,12 @@ def load_fhir_data(df, dataset_name):
     patient_ids = []
     gndr = None
     
+    # Remove 'dataset_' prefix from the dataset_name if it exists
+    if dataset_name and dataset_name.startswith('dataset_'):
+        group_id = dataset_name[len('dataset_'):]
+    else:
+        group_id = dataset_name
+    
     # Safely find gender column
     for col in df.columns:
         try:
@@ -1046,16 +1052,31 @@ def load_fhir_data(df, dataset_name):
             sample_bundle.append(bundle)
             bundle_count += 1
 
-    group_id = str(dataset_name)
+    # Create the Group resource with the cleaned ID (without dataset_ prefix)
     url = f"http://65.0.127.208:30007/fhir/Group/{group_id}"
     resource_data = create_group(group_id, patient_ids, grp_template)
-
-    # r = requests.put(url,
-    #                 headers= {"Accept": "application/fhir+json", "Content-Type": "application/fhir+json"},
-    #                 data=json.dumps(resource_data))
-    # print(r.status_code)
-    # print(r.json())
-
+    
+    # Create a bundle entry for the Group resource
+    group_bundle_entry = {
+        "request": {"method": "PUT"}, 
+        "fullUrl": baseurl + "Group/" + group_id,
+        "resource": resource_data
+    }
+    
+    # Add the Group resource to its own transaction bundle
+    group_bundle = {
+        "resourceType": "Bundle", 
+        "type": "transaction", 
+        "entry": [group_bundle_entry]
+    }
+    
+    # Add the Group bundle to the full bundle
+    fullbundle.append(group_bundle)
+    
+    # Add the Group resource to the sample bundle too, if it exists
+    if sample_bundle:
+        sample_bundle.append(group_bundle)
+    
     with open("bundle.json", "w") as f:
         json.dump(fullbundle, f, indent=4)
 
