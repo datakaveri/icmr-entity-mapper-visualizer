@@ -19,5 +19,11 @@ COPY . .
 # Expose the port the app runs on
 EXPOSE 8050
 
+# Create a non-root user with UID 1001 and add it to the root group
+RUN useradd -r -u 1001 -g root entity-user
+
+# Switch to the non-root user
+USER entity-user
+
 # Command to run the application
 CMD ["python", "entity_mapper_app_snomed.py"]
