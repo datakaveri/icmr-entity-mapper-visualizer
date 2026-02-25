@@ -107,7 +107,7 @@ prefixed==0.9.0
 preshed==3.0.9
 prompt_toolkit==3.0.51
 propcache==0.3.1
-protobuf==6.30.2
+protobuf==6.33.5
 psutil==7.0.0
 psycopg2-binary==2.9.10
 ptyprocess==0.7.0
